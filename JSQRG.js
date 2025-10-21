@@ -34,8 +34,8 @@
     };
 
     // Register the plugin
-    // -------------------
-    window.JSQR = function (options, $element) {
+    // -------------------f
+    window.JSQRG = function (options, $element) {
         var settings = {};
         Object.assign(settings, defaults, options);
         // ... (keep your mapping lines as-is)
@@ -52,13 +52,62 @@
         settings.quiet = settings['quiet'];
 
 
-        const svg = createSvg(settings); 
+        const svg = createSvg(settings);
         $element.appendChild(svg);
     };
 
+    // --- SVG fill defs (kept behavior) ---
+    function createSvgFillDef(svg, settings) {
+        const fill = settings.fill;
+        if (typeof fill === 'string') return null;
+
+        const type = fill.type;
+        const pos = fill.position || [0, 0, 1, 0];
+        const colorStops = fill.colorStops || [];
+        const defs = svg.querySelector('defs') || (function () {
+            const d = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            svg.appendChild(d);
+            return d;
+        })();
+
+        const id = 'qr_grad_' + Math.random().toString(36).slice(2, 9);
+
+        if (type === 'linear-gradient') {
+            const g = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+            g.setAttribute('id', id);
+            g.setAttribute('x1', String(pos[0]));
+            g.setAttribute('y1', String(pos[1]));
+            g.setAttribute('x2', String(pos[2]));
+            g.setAttribute('y2', String(pos[3]));
+            for (let i = 0; i < colorStops.length; i++) {
+                const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+                stop.setAttribute('offset', String(colorStops[i][0]));
+                stop.setAttribute('stop-color', colorStops[i][1]);
+                g.appendChild(stop);
+            }
+            defs.appendChild(g);
+        } else if (type === 'radial-gradient') {
+            const g = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
+            g.setAttribute('id', id);
+            g.setAttribute('cx', String(pos[0]));
+            g.setAttribute('cy', String(pos[1]));
+            g.setAttribute('r', String(pos[2] || 0.5));
+            for (let i = 0; i < colorStops.length; i++) {
+                const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+                stop.setAttribute('offset', String(colorStops[i][0]));
+                stop.setAttribute('stop-color', colorStops[i][1]);
+                g.appendChild(stop);
+            }
+            defs.appendChild(g);
+        } else {
+            throw new Error('Unsupported fill for SVG');
+        }
+        return id;
+    }
+
+    // ---------- QR builder helpers (unchanged logic) ----------
     function createQRCode(text, level, version, quiet) {
         var qr = {};
-
         var vqr = vendor_qrcode(version, level);
         vqr.addData(text);
         vqr.make();
@@ -71,10 +120,7 @@
         function isDark(row, col) {
             row -= quiet;
             col -= quiet;
-
-            if (row < 0 || row >= qrModuleCount || col < 0 || col >= qrModuleCount) {
-                return false;
-            }
+            if (row < 0 || row >= qrModuleCount || col < 0 || col >= qrModuleCount) return false;
             return vqr.isDark(row, col);
         }
 
@@ -83,8 +129,6 @@
         qr.version = version;
         qr.moduleCount = quietModuleCount;
         qr.isDark = isDark;
-        //        qr.addBlank = addBlank;
-
         return qr;
     }
     function createMinQRCode(text, level, minVersion, maxVersion, quiet) {
@@ -98,64 +142,24 @@
         return undefined;
     }
 
-    function createSvgFillDef(svg, settings) {
-        const fill = settings.fill;
-        if (typeof fill === 'string') return null; // solid color -> no defs needed
-
-        const type = fill.type;
-        const pos = fill.position || [0, 0, 1, 0]; // normalized coords used below
-        const colorStops = fill.colorStops || [];
-        const defs = svg.querySelector('defs') || (function () { const d = document.createElementNS('http://www.w3.org/2000/svg', 'defs'); svg.appendChild(d); return d; })();
-
-        const id = 'qr_grad_' + Math.random().toString(36).slice(2, 9);
-        if (type === 'linear-gradient') {
-            // position holds [x1, y1, x2, y2] as proportions of size
-            const g = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
-            g.setAttribute('id', id);
-            g.setAttribute('x1', String(pos[0]));
-            g.setAttribute('y1', String(pos[1]));
-            g.setAttribute('x2', String(pos[2]));
-            g.setAttribute('y2', String(pos[3]));
-            colorStops.forEach(([offset, color]) => {
-                const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
-                stop.setAttribute('offset', String(offset));
-                stop.setAttribute('stop-color', color);
-                g.appendChild(stop);
-            });
-            defs.appendChild(g);
-        } else if (type === 'radial-gradient') {
-            const g = document.createElementNS('http://www.w3.org/2000/svg', 'radialGradient');
-            g.setAttribute('id', id);
-            // SVG radial coords require cx,cy,r; we expect position => [cx, cy, r, fx] maybe.
-            g.setAttribute('cx', String(pos[0]));
-            g.setAttribute('cy', String(pos[1]));
-            g.setAttribute('r', String(pos[2] || 0.5));
-            colorStops.forEach(([offset, color]) => {
-                const stop = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
-                stop.setAttribute('offset', String(offset));
-                stop.setAttribute('stop-color', color);
-                g.appendChild(stop);
-            });
-            defs.appendChild(g);
-        } else {
-            throw new Error('Unsupported fill for SVG');
-        }
-        return id;
-    }
+    const r2 = v => Math.round(v * 100) / 100;
+    // ---------- Main optimized createSvg ----------
     function createSvg(settings) {
         const size = settings.size;
         const qr = createMinQRCode(settings.text, settings.ecLevel, settings.minVersion, settings.maxVersion, settings.quiet);
         if (!qr) return null;
 
-        const moduleCount = qr.moduleCount;
-        const moduleSize = size / moduleCount;
+        const n = qr.moduleCount, s = size / n,
+            rad = Math.min(0.5, Math.max(0, settings.radius || 0)) * s;
+        const grid = new Uint8Array(n * n);
+        for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) grid[r * n + c] = qr.isDark(r, c);
 
+        const dark = (r, c) => r >= 0 && c >= 0 && r < n && c < n && grid[r * n + c];
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         svg.setAttribute('width', size);
         svg.setAttribute('height', size);
         svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
 
-        // background
         if (settings.background) {
             const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
             bg.setAttribute('width', size);
@@ -164,92 +168,135 @@
             svg.appendChild(bg);
         }
 
-        // fill setup
-        let fillAttr = '#000';
-        if (typeof settings.fill === 'string') fillAttr = settings.fill;
-        else {
-            const gradId = createSvgFillDef(svg, settings);
-            fillAttr = gradId ? `url(#${gradId})` : '#000';
-        }
+        const fillAttr = typeof settings.fill === 'string'
+            ? settings.fill
+            : `url(#${createSvgFillDef(svg, settings) || ''})` || '#000';
 
-        const rxModule = Math.min(0.5, Math.max(0, settings.radius || 0)) * moduleSize;
-
-        // boolean grid
-        const grid = Array.from({ length: moduleCount }, (_, r) =>
-            Array.from({ length: moduleCount }, (_, c) => !!qr.isDark(r, c))
-        );
-
-        const isDarkAt = (r, c) => r >= 0 && c >= 0 && r < moduleCount && c < moduleCount && grid[r][c];
-
-        const round = n => Math.round(n); // round to max 2 decimals
-
-        const pathData = [];
-        const rad = rxModule;
-
-        // Dark modules
-        for (let r = 0; r < moduleCount; r++) {
-            for (let c = 0; c < moduleCount; c++) {
-                if (!grid[r][c]) continue;
-
-                const x = settings.left + c * moduleSize;
-                const y = settings.top + r * moduleSize;
-                const s = moduleSize;
-
-                const north = isDarkAt(r - 1, c);
-                const south = isDarkAt(r + 1, c);
-                const west = isDarkAt(r, c - 1);
-                const east = isDarkAt(r, c + 1);
-
-                const L = round(x), T = round(y), R = round(x + s), B = round(y + s);
-                const radd = rad > 0 ? Math.min(rad, s / 2) : 0;
-
-                let d = `M ${round(L + (north || west ? 0 : radd))} ${T}`;
-                d += !north && !east ? ` L ${round(R - radd)} ${T} Q ${R} ${T} ${R} ${round(T + radd)}` : ` L ${R} ${T}`;
-                d += !east && !south ? ` L ${R} ${round(B - radd)} Q ${R} ${B} ${round(R - radd)} ${B}` : ` L ${R} ${B}`;
-                d += !south && !west ? ` L ${round(L + radd)} ${B} Q ${L} ${B} ${L} ${round(B - radd)}` : ` L ${L} ${B}`;
-                d += !west && !north ? ` L ${L} ${round(T + radd)} Q ${L} ${T} ${round(L + radd)} ${T}` : ` L ${L} ${T}`;
-                d += " Z";
-                pathData.push(d);
+        const visited = new Uint8Array(n * n), stack = [], groups = [];
+        for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+            const i = r * n + c;
+            if (!grid[i] || visited[i]) continue;
+            const g = [];
+            stack.push(i); visited[i] = 1;
+            while (stack.length) {
+                const id = stack.pop(), rr = ~~(id / n), cc = id % n;
+                g.push([rr, cc]);
+                const nb = [id - n, id + n, id - 1, id + 1];
+                if (rr > 0 && grid[nb[0]] && !visited[nb[0]]) { visited[nb[0]] = 1; stack.push(nb[0]); }
+                if (rr + 1 < n && grid[nb[1]] && !visited[nb[1]]) { visited[nb[1]] = 1; stack.push(nb[1]); }
+                if (cc > 0 && grid[nb[2]] && !visited[nb[2]]) { visited[nb[2]] = 1; stack.push(nb[2]); }
+                if (cc + 1 < n && grid[nb[3]] && !visited[nb[3]]) { visited[nb[3]] = 1; stack.push(nb[3]); }
             }
+            groups.push(g);
         }
 
-        // Inner concave rounding
-        for (let r = 0; r < moduleCount; r++) {
-            for (let c = 0; c < moduleCount; c++) {
-                if (grid[r][c]) continue;
+        for (const g of groups) {
+            const edges = [], used = [];
+            const adj = {};
+            const addEdge = (x1, y1, x2, y2) => {
+                const i = edges.length;
+                const a = `${r2(x1)},${r2(y1)}`, b = `${r2(x2)},${r2(y2)}`;
+                edges.push({ x1: r2(x1), y1: r2(y1), x2: r2(x2), y2: r2(y2) });
+                used.push(0);
+                (adj[a] ||= []).push(i);
+                (adj[b] ||= []);
+            };
 
-                const x = settings.left + c * moduleSize;
-                const y = settings.top + r * moduleSize;
-                const s = moduleSize;
+            for (const [r, c] of g) {
+                const x = settings.left + c * s, y = settings.top + r * s;
+                if (!dark(r - 1, c)) addEdge(x, y, x + s, y);
+                if (!dark(r, c + 1)) addEdge(x + s, y, x + s, y + s);
+                if (!dark(r + 1, c)) addEdge(x + s, y + s, x, y + s);
+                if (!dark(r, c - 1)) addEdge(x, y + s, x, y);
+            }
+            if (!edges.length) continue;
 
-                const north = isDarkAt(r - 1, c);
-                const south = isDarkAt(r + 1, c);
-                const west = isDarkAt(r, c - 1);
-                const east = isDarkAt(r, c + 1);
-                const nw = isDarkAt(r - 1, c - 1);
-                const ne = isDarkAt(r - 1, c + 1);
-                const sw = isDarkAt(r + 1, c - 1);
-                const se = isDarkAt(r + 1, c + 1);
+            const keys = Object.keys(adj), seen = {}, comps = [];
+            for (const k of keys) if (!seen[k]) {
+                const q = [k], comp = [k]; seen[k] = 1;
+                while (q.length) {
+                    const cur = q.shift();
+                    for (const e of adj[cur]) {
+                        const nb = `${edges[e].x2},${edges[e].y2}`;
+                        if (!seen[nb]) { seen[nb] = 1; comp.push(nb); q.push(nb); }
+                    }
+                }
+                comps.push(comp);
+            }
 
-                const L = round(x), T = round(y), R = round(x + s), B = round(y + s);
-                const radd = rad > 0 ? Math.min(rad, s / 2) : 0;
+            const loops = [];
+            for (const comp of comps) {
+                const set = Object.fromEntries(comp.map(v => [v, 1]));
+                const local = {};
+                const list = edges.map((e, i) => [`${e.x1},${e.y1}`, i])
+                    .filter(([a, i]) => set[a] && set[`${edges[i].x2},${edges[i].y2}`]);
+                for (const [a, i] of list) (local[a] ||= []).push(i);
 
-                if (radd > 0) {
-                    if (north && west && nw) pathData.push(`M ${round(L + radd)} ${T} L ${L} ${T} L ${L} ${round(T + radd)} Q ${L} ${T} ${round(L + radd)} ${T} Z`);
-                    if (north && east && ne) pathData.push(`M ${round(R - radd)} ${T} L ${R} ${T} L ${R} ${round(T + radd)} Q ${R} ${T} ${round(R - radd)} ${T} Z`);
-                    if (south && east && se) pathData.push(`M ${round(R - radd)} ${B} L ${R} ${B} L ${R} ${round(B - radd)} Q ${R} ${B} ${round(R - radd)} ${B} Z`);
-                    if (south && west && sw) pathData.push(`M ${round(L + radd)} ${B} L ${L} ${B} L ${L} ${round(B - radd)} Q ${L} ${B} ${round(L + radd)} ${B} Z`);
+                const nextEdge = k => {
+                    const a = local[k]; while (a && a.length) {
+                        const i = a.pop(); if (!used[i]) return i;
+                    } return -1;
+                };
+
+                for (const [_, start] of list) {
+                    if (used[start]) continue;
+                    const pts = [{ x: edges[start].x1, y: edges[start].y1 }, { x: edges[start].x2, y: edges[start].y2 }];
+                    let cur = `${edges[start].x2},${edges[start].y2}`, first = `${edges[start].x1},${edges[start].y1}`;
+                    used[start] = 1;
+                    let safety = 0;
+                    while (cur !== first && safety++ < 1e5) {
+                        let ni = nextEdge(cur);
+                        if (ni >= 0) {
+                            used[ni] = 1;
+                            pts.push({ x: edges[ni].x2, y: edges[ni].y2 });
+                            cur = `${edges[ni].x2},${edges[ni].y2}`;
+                        } else {
+                            const rev = list.find(([, i]) => !used[i] && `${edges[i].x2},${edges[i].y2}` === cur);
+                            if (!rev) break;
+                            used[rev[1]] = 1;
+                            pts.push({ x: edges[rev[1]].x1, y: edges[rev[1]].y1 });
+                            cur = `${edges[rev[1]].x1},${edges[rev[1]].y1}`;
+                        }
+                    }
+                    if (pts.length < 3) continue;
+                    if (pts[0].x !== pts.at(-1).x || pts[0].y !== pts.at(-1).y) pts.push(pts[0]);
+                    const clean = pts.filter((p, i) => !i || p.x !== pts[i - 1].x || p.y !== pts[i - 1].y);
+                    if (clean.length >= 3) loops.push(clean);
                 }
             }
+            function makePath(pts) {
+                if (pts.length <= 2) return '';
+                const n = pts.length - 1, out = [];
+                for (let i = 0; i < n; i++) {
+                    const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n];
+                    const vinx = p1.x - p0.x, viny = p1.y - p0.y, voutx = p2.x - p1.x, vouty = p2.y - p1.y;
+                    const lin = Math.hypot(vinx, viny), lout = Math.hypot(voutx, vouty);
+                    const ninx = vinx / (lin || 1), niny = viny / (lin || 1), noutx = voutx / (lout || 1), nouty = vouty / (lout || 1);
+                    const o = Math.min(rad, lin / 2, lout / 2);
+                    out[i] = { pin: { x: p1.x - ninx * o, y: p1.y - niny * o }, cur: p1, pout: { x: p1.x + noutx * o, y: p1.y + nouty * o } };
+                }
+                let d = `M${r2(out[0].pin.x)} ${r2(out[0].pin.y)} `;
+                for (let i = 0; i < n; i++) {
+                    const a = out[i], b = out[(i + 1) % n];
+                    d += `L${r2(a.pin.x)} ${r2(a.pin.y)} `;
+                    const off = Math.hypot(a.pout.x - a.cur.x, a.pout.y - a.cur.y);
+                    d += off < 1e-3
+                        ? `L${r2(b.pin.x)} ${r2(b.pin.y)} `
+                        : `Q${r2(a.cur.x)} ${r2(a.cur.y)} ${r2(a.pout.x)} ${r2(a.pout.y)} `;
+                }
+                return d + 'Z';
+            };
+
+            if (loops.length) {
+                const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                p.setAttribute('fill', fillAttr);
+                p.setAttribute('d', loops.map(makePath).join(' '));
+                svg.appendChild(p);
+            }
         }
-
-        const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        p.setAttribute('fill', fillAttr);
-        p.setAttribute('d', pathData.join(' '));
-        svg.appendChild(p);
-
         return svg;
     }
+
 
 }(function () {
     // `qrcode` is the single public function defined by the `QR Code Generator`
