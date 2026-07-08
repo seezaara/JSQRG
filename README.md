@@ -45,6 +45,7 @@ No other dependencies are required.
       text: "https://example.com",
       size: 250,
       radius: 0.3,
+      logo: 9,
       fill: { 
           type: "linear-gradient", 
           position: [0, 0, 1, 1], 
