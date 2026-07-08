@@ -23,7 +23,7 @@
         'background': null,
 
         // content
-        'text': 'no text',
+        'text': '',
 
         // corner radius relative to module width: 0.0 .. 0.5
         'radius': 0.5,
@@ -34,7 +34,7 @@
     };
 
     // Register the plugin
-    // -------------------f
+    // -------------------
     window.JSQRG = function (options, $element) {
         var settings = {};
         Object.assign(settings, defaults, options);
@@ -152,7 +152,22 @@
         const n = qr.moduleCount, s = size / n,
             rad = Math.min(0.5, Math.max(0, settings.radius || 0)) * s;
         const grid = new Uint8Array(n * n);
-        for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) grid[r * n + c] = qr.isDark(r, c);
+        for (let r = 0; r < n; r++)
+            for (let c = 0; c < n; c++)
+                grid[r * n + c] = qr.isDark(r, c);
+
+        if (settings.logo) {
+            const modules = settings.logo;
+
+            const start = Math.floor((n - modules) / 2);
+            const end = start + modules;
+
+            for (let r = start; r < end; r++) {
+                for (let c = start; c < end; c++) {
+                    grid[r * n + c] = 0;
+                }
+            }
+        }
 
         const dark = (r, c) => r >= 0 && c >= 0 && r < n && c < n && grid[r * n + c];
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -189,7 +204,7 @@
             }
             groups.push(g);
         }
-
+        let allPath = "";
         for (const g of groups) {
             const edges = [], used = [];
             const adj = {};
@@ -288,12 +303,16 @@
             };
 
             if (loops.length) {
-                const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                p.setAttribute('fill', fillAttr);
-                p.setAttribute('d', loops.map(makePath).join(' '));
-                svg.appendChild(p);
+                allPath += loops.map(makePath).join(" ") + " ";
             }
         }
+        if (allPath) {
+            const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            p.setAttribute("fill", fillAttr);
+            p.setAttribute("d", allPath.trim());
+            svg.appendChild(p);
+        }
+
         return svg;
     }
 
